@@ -21,31 +21,17 @@ public class ParsePPP {
 	Long lineNum = (long)1;
 	int headerlines;
 	int timezone;
-	boolean startFilter;
-	boolean fullFilter;
-	Double maxJump;
 	LinkedList<Integer> flagEvents; 
-	Integer numFlagged;
-	boolean filterPassed;
 	String outpath;
 	int output;
-	
 	int count;
-	int filter2BufferTime;
-	Double zFactor;
-	boolean plotTide;
 	File csv;
 
 	public static void main(String[] args) {
 
 		//if (checkUsage(args)){
 		 String current = null;
-		try {
-			current = new java.io.File( "." ).getCanonicalPath();
-		} catch (IOException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		}
+	
 	        System.out.println("Current dir:"+current);
 			
 			ParsePPP parser = new ParsePPP(args);
@@ -68,20 +54,6 @@ public class ParsePPP {
 				}
 			}
 
-			if(parser.startFilter == true){
-			
-				System.out.println("running start filter");
-				if (parser.firstFilter()){
-					System.out.println("event found");
-					parser.checkFilter();
-				}
-			}	
-
-			if(parser.fullFilter == true){
-				System.out.println("running full filter");
-				parser.runSecondFilter();
-			}
-			
 			if(parser.output == 1){
 				parser.printTideFile();
 			}
@@ -100,15 +72,7 @@ public class ParsePPP {
 
 		headerlines = 1;
 		timezone = 0;
-		startFilter = false;
-		fullFilter = false;
-		maxJump = 1000000.0;
-		numFlagged = 0;
-		filterPassed = false;
-		count = 1;
-		filter2BufferTime = 30;
-		zFactor = (double) 2;
-		plotTide = false;
+		count = 10;
 		//csv = new File(args[args.length-1]);
 		csv = new File("140611.csv");
 		outpath = (csv.getParent() + "/" );
@@ -118,20 +82,9 @@ public class ParsePPP {
 			if (args[i].contentEquals("-headerlines") ){
 				headerlines = Integer.parseInt(args[i+1]);
 			}
-			if (args[i].contentEquals("-filterStart") ){
-				startFilter = true;
-				maxJump = Double.parseDouble(args[i+1]);
-			}
-			if (args[i].contentEquals("-filterFull") ){
-				fullFilter = true;
-				filter2BufferTime = Integer.parseInt(args[i+1]);
-			}
 			if (args[i].contentEquals("-decimate") ){
 				count = Integer.parseInt(args[i+1]);
 			}
-			//if (args[i].contentEquals("-plotTide") ){
-			//	plotTide = true;
-			//}
 			if (args[i].contentEquals("-outpath") ){
 				outpath = (args[i+1]);
 			}
@@ -141,7 +94,7 @@ public class ParsePPP {
 			if (args[i].contentEquals("-nav") ){
 				output = 2;
 			}
-			
+		
 
 		}
 
@@ -158,110 +111,6 @@ public class ParsePPP {
 		header = new LinkedList<String>();
 		obsList = new LinkedList<Observation>();
 		flagEvents = new LinkedList<Integer>();
-	}
-
-	public static boolean checkUsage(String[] args){
-		if (args.length == 0){
-			System.out.println("Usage : parsePPP eg: parsePPP -headerlines 1 -count 5 -filterAll 0.5 061114.csv ");
-			System.out.println("(-headerlines int (number of headerlines))");
-			System.out.println("(-filterStart double (maximum jump between heights)) looks for initialization event and flags all previous observations");
-			System.out.println("(-filterFull int (buffer length in seconds) filters data based on std dev and mean of data in buffer");
-			System.out.println("(-decimate int (sample rate of output)) reduces number of samples in output file");
-			System.out.println("(-outpath) redirects output files");
-			System.out.println("(-tide) outputs (1970time OrthometricHeight)");
-			System.out.println("(-tide) outputs (hour minute second day month year lat long orthometricHeight)");
-			return false;
-		}else return true;
-
-	}
-
-	public void flagObservations(int begin , int end , int type){
-		for (int j = begin ; j < (end + 1) ; j++){
-			obsList.get(j).flag(type);
-			numFlagged++;
-		}
-	}
-	
-	public void flagObservations(int observation , int type){
-		{
-			obsList.get(observation).flag(type);
-			numFlagged++;
-		}
-	}
-
-	public boolean firstFilter(){
-		Double currentHeight = obsList.get(0).getEllipHeight();
-		Double previousHeight = null;
-		for (int i = 1 ; i < 1000 ; i++){
-			previousHeight = currentHeight;
-			currentHeight = obsList.get(i).getEllipHeight();
-			if (Math.abs(currentHeight - previousHeight) > maxJump){
-				flagEvents.add(0);
-				flagEvents.add(i-1);
-				flagObservations(0 , i - 1 , 1);
-				return true;
-			}
-		}
-		return false;
-	}
-
-	public int secondFilter(){
-		Units units = new Units(1,1);	
-		int events = 0;
-		int start;
-		int realStart = 0;
-		Double meanHeight;
-		Double stdDevHeight;
-		LinkedList<Observation> buffer = new LinkedList<Observation>();
-		if (flagEvents.size()==0){ 
-			start = 0;
-		} else{
-			start = flagEvents.getLast()+ 1;
-		}		
-
-		long startTime = (obsList.get(start).getTime()) + filter2BufferTime;
-		for (int i = start ; i < start + (filter2BufferTime * 3) ; i++ ){
-			if (obsList.get(i).getTime() > startTime ){
-				realStart = i;
-				break;
-			}
-		}
-		
-		for (int i = realStart ; i < obsList.size() ; i++){
-			long currentTime = obsList.get(i).getTime();
-			buffer.clear();
-			for (int j = i - 1; j > i - (filter2BufferTime * 3) ; j--){
-			
-				if ( obsList.get(j).getTime() > (currentTime - filter2BufferTime) ){
-					
-					buffer.addFirst(obsList.get(j));
-				}else{break;}
-			}
-			meanHeight = units.getMean(buffer);
-			stdDevHeight = units.getStdDev(buffer, meanHeight);
-			
-			if (obsList.get(i).getOrthHeight() > (meanHeight + (zFactor * stdDevHeight)) || obsList.get(i).getOrthHeight() < (meanHeight - (zFactor * stdDevHeight))){
-				flagObservations(i, 2);
-				events++;
-			}
-		}
-		return events;
-	}		
-			
-	
-	public void runSecondFilter(){
-		int k = secondFilter();
-		System.out.println( (k) + " observations flagged");
-		checkFilter();
-	}
-
-	public void checkFilter(){
-		if (numFlagged < (obsList.size()/4)){
-			filterPassed = true;
-			System.out.println("Filtering sucessful");
-		}else{
-			System.out.println("Filtering Failed, output will not be filtered");
-		}
 	}
 
 	public boolean printTideFile(){
@@ -295,7 +144,7 @@ public class ParsePPP {
 		System.out.println("Writing File: " + outFileName);
 		for (int i = 0 ; i < obsList.size() ; i = i + count){
 			obs = obsList.get(i);
-			if (!obs.isFlagged() || filterPassed == false){
+			if (!obs.isFlagged()){
 				printy.println(obs.outputTide());
 			}
 		}
@@ -324,7 +173,7 @@ public class ParsePPP {
 		System.out.println("Writing File: " + outFileName);
 		for (int i = 0 ; i < obsList.size() ; i = i + count){
 			obs = obsList.get(i);
-			if (!obs.isFlagged() || filterPassed == false){
+			if (!obs.isFlagged()){
 				bytes = obs.outputNav();				
 					printy.write(bytes.array());
 					//System.out.println(bytes.array());
@@ -356,41 +205,7 @@ public class ParsePPP {
 		obsList.add(obs); 
 	}
 
-	public double[] getTimeArray(){
-		double[] x = new double[obsList.size() - numFlagged ];
-		int counter = 0;
-		for( int p = 0 ; p < obsList.size() ; p++){
-			if(!obsList.get(p).isFlagged() ){
-			x[counter] = obsList.get(p).getTime();
-			counter++;
-			}
-		}
-		return x;
-	}
-	
-	public double[] getHeightArray(){
-		double[] y = new double[obsList.size() - numFlagged ];
-		int counter = 0;
-		for( int p = 0 ; p < obsList.size() ; p++){
-			if(!obsList.get(p).isFlagged() ){
-				 y[counter] = obsList.get(p).getOrthHeight();
-				 counter++;
-			}
-		}
-		return y;
-	}
-	
-	 
-		
 
-	 String toBinary( byte[] bytes )
-	 {
-	     StringBuilder sb = new StringBuilder(bytes.length * Byte.SIZE);
-	     for( int i = 0; i < Byte.SIZE * bytes.length; i++ )
-	         sb.append((bytes[i / Byte.SIZE] << i % Byte.SIZE & 0x80) == 0 ? '0' : '1');
-	     return sb.toString();
-	 }
-	
 	class Observation {
 
 		private Double latitude;
@@ -409,14 +224,6 @@ public class ParsePPP {
 			this.orthHeight = orthHeight;
 			this.date = date;
 			this.flagged = 0;
-		}
-
-		public Double getLatitude() {
-			return latitude;
-		}
-
-		public Double getLongitude() {
-			return longitude;
 		}
 
 		public Double getEllipHeight() {
@@ -715,7 +522,5 @@ public class ParsePPP {
 		}
 
 	}
-
-	
 
 }
